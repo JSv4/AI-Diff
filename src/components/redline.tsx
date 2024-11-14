@@ -1,16 +1,15 @@
-import { FC } from 'react';
-import ReactDiffViewer from 'react-diff-viewer';
+import React, { FC, useState } from 'react';
+import DiffViewer, { DiffMethod } from 'react-diff-viewer';
 import styled from '@emotion/styled';
 
+/**
+ * Props for the RedlineDiff component
+ */
 interface RedlineDiffProps {
   input: string;
   output: string;
   onLineClick?: (lineNumber: number, type: 'add' | 'remove') => void;
-  selectedChanges?: Array<{
-    lineNumber: number;
-    type: 'add' | 'remove';
-    text: string;
-  }>;
+  selectedLines?: string[];
 }
 
 const DiffContainer = styled.div`
@@ -18,94 +17,45 @@ const DiffContainer = styled.div`
 `;
 
 /**
- * RedlineDiff component that displays the differences between two text strings
- * using react-diff-viewer with line click handling
- * 
- * @param input - The original text string
- * @param output - The modified text string
- * @param onLineClick - Optional callback for when a line is clicked
- * @returns A styled diff view of the changes between input and output
+ * RedlineDiff component that displays the differences between two text strings using 'react-diff-viewer'
  */
-export const RedlineDiff: FC<RedlineDiffProps> = ({ 
-  input, 
-  output, 
-  onLineClick, 
-  selectedChanges = [] 
+export const RedlineDiff: FC<RedlineDiffProps> = ({
+  input,
+  output,
+  onLineClick,
+  selectedLines = [],
 }) => {
-  const handleLineNumberClick = (lineId: string) => {
-    console.log('Raw lineId received:', lineId);
+  const [highlightLines, setHighlightLines] = useState<string[]>(selectedLines);
 
-    // For added (new) lines, react-diff-viewer uses a different format
-    // It uses 'undefined-{lineNumber}' for added lines
-    if (lineId?.startsWith('undefined-')) {
-      const lineNumber = parseInt(lineId.split('-')[1]);
-      if (!isNaN(lineNumber)) {
-        console.log('Processed add line:', lineNumber);
-        onLineClick?.(lineNumber, 'add');
-        return;
-      }
+  /**
+   * Handles line click events and invokes the onLineClick callback
+   * @param id - The identifier of the clicked line (e.g., 'L-1' or 'R-1')
+   * @param event - The click event
+   */
+  const handleLineClick = (
+    id: string,
+    event: React.MouseEvent<HTMLTableCellElement>
+  ) => {
+    if (onLineClick) {
+      const [side, lineNumberStr] = id.split('-');
+      const lineNumber = parseInt(lineNumberStr, 10);
+      const type = side === 'L' ? 'remove' : 'add';
+      onLineClick(lineNumber, type);
     }
-
-    // Handle removed (old) lines which use the 'L-{lineNumber}' format
-    if (lineId?.startsWith('L-')) {
-      const lineNumber = parseInt(lineId.slice(2));
-      if (!isNaN(lineNumber)) {
-        console.log('Processed remove line:', lineNumber);
-        onLineClick?.(lineNumber, 'remove');
-        return;
-      }
-    }
-
-    console.warn('Unhandled lineId format:', lineId);
+    setHighlightLines([id]);
   };
-
-  // Create highlight lines array - need to handle both formats
-  const highlightLines = selectedChanges.map(change => {
-    if (change.type === 'remove') {
-      return `L-${change.lineNumber}`;
-    } else {
-      // For added lines, we need to use the 'undefined-{number}' format
-      return `undefined-${change.lineNumber}`;
-    }
-  });
-
-  console.log('Current highlightLines:', highlightLines);
 
   return (
     <DiffContainer>
-      <ReactDiffViewer
+      <DiffViewer
         oldValue={input}
         newValue={output}
-        splitView={false}
-        onLineNumberClick={handleLineNumberClick}
-        useDarkTheme={false}
-        showDiffOnly={true}
-        extraLinesSurroundingDiff={3}
+        splitView={true}
+        onLineNumberClick={handleLineClick}
         highlightLines={highlightLines}
-        styles={{
-          variables: {
-            light: {
-              highlightBackground: '#ffeb3b40',
-              highlightGutterBackground: '#fff59d',
-            }
-          },
-          line: {
-            '&[data-line-number]': {
-              cursor: 'pointer',
-              '&.highlighted': {
-                backgroundColor: '#ffeb3b40 !important',
-                position: 'relative',
-                '&::after': {
-                  content: '"✓"',
-                  position: 'absolute',
-                  right: '8px',
-                  color: '#28a745',
-                }
-              }
-            }
-          }
-        }}
+        compareMethod={DiffMethod.WORDS}
       />
     </DiffContainer>
   );
 };
+
