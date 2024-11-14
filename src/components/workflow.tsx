@@ -1,20 +1,29 @@
-import { FC, useState, useCallback } from 'react';
+import React, { FC, useState, useCallback } from 'react';
 import { RedlineDiff } from './redline';
 import { extractModifiedText } from '../utils/parse';
 import MDEditor from '@uiw/react-md-editor';
 import styled from '@emotion/styled';
 
+/**
+ * Props for the Workflow component
+ */
 interface WorkflowProps {
   apiKey: string;
 }
 
+/**
+ * Represents a selected change in the diff
+ */
 interface SelectedChange {
   lineNumber: number;
   type: 'add' | 'remove';
   text: string;
 }
 
-type WorkflowState = 'input' | 'editing' | 'selection' | 'finalizing' | 'complete';
+/**
+ * Possible states of the workflow
+ */
+type WorkflowState = 'input' | 'selection' | 'finalizing' | 'complete';
 
 const Container = styled.div`
   max-width: 1200px;
@@ -70,12 +79,34 @@ const ErrorMessage = styled.div`
   margin-bottom: 16px;
 `;
 
-interface RedlineDiffProps {
-  input: string;
-  output: string;
-  onLineClick?: (lineNumber: number, type: 'add' | 'remove') => void;
-  selectedChanges?: SelectedChange[];
-}
+const StepIndicator = styled.div`
+  display: flex;
+  margin-bottom: 20px;
+`;
+
+const Step = styled.div<{ active: boolean }>`
+  flex: 1;
+  padding: 10px;
+  text-align: center;
+  background-color: ${({ active }) => (active ? '#0066cc' : '#cccccc')};
+  color: white;
+  border-radius: 4px;
+  margin-right: 5px;
+
+  &:last-of-type {
+    margin-right: 0;
+  }
+`;
+
+const ResetButton = styled.button`
+  padding: 8px 16px;
+  margin-left: 10px;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+`;
 
 /**
  * Workflow component that manages the editing flow of text using AI
@@ -91,27 +122,61 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
   const [workflowState, setWorkflowState] = useState<WorkflowState>('input');
   const [error, setError] = useState<string | null>(null);
 
-  const handleLineClick = useCallback((lineNumber: number, type: 'add' | 'remove') => {
-    setSelectedChanges(prev => {
-      const exists = prev.some(change => 
-        change.lineNumber === lineNumber && change.type === type
-      );
-      
-      if (exists) {
-        return prev.filter(change => 
-          !(change.lineNumber === lineNumber && change.type === type)
-        );
-      }
-      
-      // Get the text from the appropriate version based on type
-      const text = type === 'remove' ? 
-        inputText.split('\n')[lineNumber - 1] : 
-        modifiedText?.split('\n')[lineNumber - 1] || '';
-      
-      return [...prev, { lineNumber, type, text }];
-    });
-  }, [inputText, modifiedText]);
+  /**
+   * Steps in the workflow
+   */
+  const steps = [
+    { label: 'Input', state: 'input' },
+    { label: 'Selection', state: 'selection' },
+    { label: 'Finalizing', state: 'finalizing' },
+    { label: 'Complete', state: 'complete' },
+  ];
 
+  /**
+   * Computes selected lines for the RedlineDiff component based on selectedChanges
+   */
+  const selectedLines = selectedChanges.map((change) => {
+    const side = change.type === 'add' ? 'R' : 'L';
+    return `${side}-${change.lineNumber}`;
+  });
+
+  /**
+   * Handles line click events in the diff view
+   * @param lineNumber - The line number that was clicked
+   * @param type - The type of change ('add' or 'remove')
+   */
+  const handleLineClick = useCallback(
+    (lineNumber: number, type: 'add' | 'remove') => {
+      setSelectedChanges((prev) => {
+        const exists = prev.some(
+          (change) =>
+            change.lineNumber === lineNumber && change.type === type
+        );
+
+        if (exists) {
+          return prev.filter(
+            (change) =>
+              !(
+                change.lineNumber === lineNumber && change.type === type
+              )
+          );
+        }
+
+        // Get the text from the appropriate version based on type
+        const text =
+          type === 'remove'
+            ? inputText.split('\n')[lineNumber - 1]
+            : modifiedText?.split('\n')[lineNumber - 1] || '';
+
+        return [...prev, { lineNumber, type, text }];
+      });
+    },
+    [inputText, modifiedText]
+  );
+
+  /**
+   * Sends the initial edit request to the AI API
+   */
   const handleInitialEdit = async () => {
     setIsLoading(true);
     setError(null);
@@ -166,6 +231,9 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
     }
   };
 
+  /**
+   * Finalizes the selected changes by sending them to the AI API
+   */
   const handleFinalize = async () => {
     setIsLoading(true);
     setError(null);
@@ -181,7 +249,7 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
           messages: [
             {
               role: 'system',
-              content: 'You are an expert editor.' // TODO: Replace with actual prompt template
+              content: 'You are going to be given text, and a list of changes to make to the text, specifically which lines to insert or delete. Your job is to take the original text and list of changes, and synthesize them into a modified form that is free of gramattical and syntax errors. Return only the modified text, as appropriate modified, omitting nothing. Lives are at stake and accuracy is critical.' // TODO: Replace with actual prompt template
             },
             {
               role: 'user',
@@ -213,14 +281,40 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
     }
   };
 
+  /**
+   * Copies the final text to the clipboard
+   */
   const copyToClipboard = () => {
     if (finalText) {
       navigator.clipboard.writeText(finalText);
     }
   };
 
+  /**
+   * Resets the workflow to the initial state
+   */
+  const resetWorkflow = () => {
+    setInputText('');
+    setPrompt('');
+    setModifiedText(null);
+    setFinalText(null);
+    setSelectedChanges([]);
+    setWorkflowState('input');
+    setError(null);
+  };
+
   return (
     <Container>
+      {/* Step Indicator */}
+      <StepIndicator>
+        {steps.map((step, index) => (
+          <Step key={index} active={workflowState === step.state}>
+            {step.label}
+          </Step>
+        ))}
+        <ResetButton onClick={resetWorkflow}>Reset</ResetButton>
+      </StepIndicator>
+
       {error && (
         <ErrorMessage>
           {error}
@@ -259,7 +353,7 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
             input={inputText}
             output={modifiedText || ''}
             onLineClick={handleLineClick}
-            selectedChanges={selectedChanges}
+            selectedLines={selectedLines}
           />
           <Button 
             onClick={handleFinalize}
@@ -280,7 +374,6 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
           <RedlineDiff
             input={inputText}
             output={finalText}
-            onLineClick={undefined}
           />
           <Button onClick={copyToClipboard}>
             Copy to Clipboard
