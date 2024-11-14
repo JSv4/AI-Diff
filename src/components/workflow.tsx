@@ -141,34 +141,38 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
   });
 
   /**
-   * Handles line click events in the diff view
-   * @param lineNumber - The line number that was clicked
-   * @param type - The type of change ('add' or 'remove')
+   * Handles line click events in the diff view.
+   * Ensures that only one change per line can be selected.
+   * @param lineNumber - The line number that was clicked.
+   * @param type - The type of change ('add' or 'remove').
    */
   const handleLineClick = useCallback(
     (lineNumber: number, type: 'add' | 'remove') => {
       setSelectedChanges((prev) => {
-        const exists = prev.some(
+        // Remove any existing change at this line number
+        const updatedChanges = prev.filter(
+          (change) => change.lineNumber !== lineNumber
+        );
+
+        // Determine if the current change was already selected
+        const wasSelected = prev.some(
           (change) =>
             change.lineNumber === lineNumber && change.type === type
         );
 
-        if (exists) {
-          return prev.filter(
-            (change) =>
-              !(
-                change.lineNumber === lineNumber && change.type === type
-              )
-          );
+        // If the change was not selected before, add it
+        if (!wasSelected) {
+          // Get the text from the appropriate version based on type
+          const text =
+            type === 'remove'
+              ? inputText.split('\n')[lineNumber - 1]
+              : modifiedText?.split('\n')[lineNumber - 1] || '';
+
+          return [...updatedChanges, { lineNumber, type, text }];
         }
 
-        // Get the text from the appropriate version based on type
-        const text =
-          type === 'remove'
-            ? inputText.split('\n')[lineNumber - 1]
-            : modifiedText?.split('\n')[lineNumber - 1] || '';
-
-        return [...prev, { lineNumber, type, text }];
+        // If it was already selected, return the updated changes without adding it (deselect)
+        return updatedChanges;
       });
     },
     [inputText, modifiedText]
@@ -232,12 +236,71 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
   };
 
   /**
-   * Finalizes the selected changes by sending them to the AI API
+   * Finalizes the selected changes by processing the user's selections
+   * and sending them to the AI API to generate the final text.
    */
   const handleFinalize = async () => {
     setIsLoading(true);
     setError(null);
+
     try {
+      // Split the input and modified texts into arrays of lines
+      const inputLines = inputText.split('\n');
+      const modifiedLines = modifiedText ? modifiedText.split('\n') : [];
+
+      // Create a map for quick lookup of selected changes
+      const selectedChangesMap = new Map<string, boolean>();
+      selectedChanges.forEach((change) => {
+        const key = `${change.type}-${change.lineNumber}`;
+        selectedChangesMap.set(key, true);
+      });
+
+      // Build the desired lines array
+      const desiredLines: string[] = [];
+      let inputIndex = 0;
+      let modifiedIndex = 0;
+
+      while (inputIndex < inputLines.length || modifiedIndex < modifiedLines.length) {
+        const inputLine = inputLines[inputIndex];
+        const modifiedLine = modifiedLines[modifiedIndex];
+
+        // Determine if the current line is an addition, deletion, or unchanged
+        const isAddition = modifiedLine && (!inputLine || modifiedLine !== inputLine);
+        const isDeletion = inputLine && (!modifiedLine || modifiedLine !== inputLine);
+        const lineNumber = Math.max(inputIndex, modifiedIndex) + 1;
+
+        if (isAddition) {
+          const key = `add-${lineNumber}`;
+          if (selectedChangesMap.get(key)) {
+            // Include the added line from modified text
+            desiredLines.push(modifiedLine);
+          }
+          modifiedIndex++;
+        } else if (isDeletion) {
+          const key = `remove-${lineNumber}`;
+          if (!selectedChangesMap.get(key)) {
+            // Include the original line if not selected for removal
+            desiredLines.push(inputLine);
+          }
+          inputIndex++;
+        } else {
+          // Unchanged line, include from original text
+          desiredLines.push(inputLine);
+          inputIndex++;
+          modifiedIndex++;
+        }
+      }
+
+      // Prepare the prompt for the AI model
+      const aiPrompt = `
+Here is a list of lines in the desired order for the final text:
+
+${desiredLines.map((line, index) => `${index + 1}: ${line}`).join('\n')}
+
+Please combine these lines into a coherent document, making only minimal changes necessary for grammatical and syntactical correctness. Return the complete text without omitting any content.
+`;
+
+      // Call the AI API with the prepared prompt
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -249,24 +312,29 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
           messages: [
             {
               role: 'system',
-              content: 'You are going to be given text, and a list of changes to make to the text, specifically which lines to insert or delete. Your job is to take the original text and list of changes, and synthesize them into a modified form that is free of gramattical and syntax errors. Return only the modified text, as appropriate modified, omitting nothing. Lives are at stake and accuracy is critical.' // TODO: Replace with actual prompt template
+              content: 'You are given a list of text lines in order. Your task is to combine these lines into a coherent and grammatically correct document. Make only minimal changes necessary for correctness.'
             },
             {
               role: 'user',
-              content: `Apply these changes:\n${selectedChanges.map(change => 
-                `${change.type}: ${change.text}`).join('\n')}\n\nOriginal text:\n${inputText}`
+              content: aiPrompt
             }
           ]
         })
       });
-      
+
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
       }
 
       const data = await response.json();
-      const extracted = extractModifiedText(data.choices[0]?.message?.content);
-      
+      const content = data.choices[0]?.message?.content;
+
+      if (!content) {
+        throw new Error('No content in API response');
+      }
+
+      // Extract the final text from the AI's response
+      const extracted = extractModifiedText(content);
       if (!extracted) {
         throw new Error('Failed to extract modified text from response');
       }

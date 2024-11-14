@@ -1,4 +1,4 @@
-import React, { FC, useState } from 'react';
+import React, { FC } from 'react';
 import DiffViewer, { DiffMethod } from 'react-diff-viewer';
 import styled from '@emotion/styled';
 
@@ -25,12 +25,10 @@ export const RedlineDiff: FC<RedlineDiffProps> = ({
   onLineClick,
   selectedLines = [],
 }) => {
-  const [highlightLines, setHighlightLines] = useState<string[]>(selectedLines);
-
   /**
-   * Handles line click events and invokes the onLineClick callback
-   * @param id - The identifier of the clicked line (e.g., 'L-1' or 'R-1')
-   * @param event - The click event
+   * Handles line click events and invokes the onLineClick callback.
+   * @param id - The identifier of the clicked line (e.g., 'L-1' or 'R-1').
+   * @param event - The click event.
    */
   const handleLineClick = (
     id: string,
@@ -42,7 +40,6 @@ export const RedlineDiff: FC<RedlineDiffProps> = ({
       const type = side === 'L' ? 'remove' : 'add';
       onLineClick(lineNumber, type);
     }
-    setHighlightLines([id]);
   };
 
   return (
@@ -52,7 +49,7 @@ export const RedlineDiff: FC<RedlineDiffProps> = ({
         newValue={output}
         splitView={true}
         onLineNumberClick={handleLineClick}
-        highlightLines={highlightLines}
+        highlightLines={selectedLines}
         compareMethod={DiffMethod.WORDS}
       />
     </DiffContainer>
