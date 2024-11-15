@@ -4,6 +4,7 @@ import { extractModifiedText } from '../utils/parse';
 import MDEditor from '@uiw/react-md-editor';
 import styled from '@emotion/styled';
 import { diffLines } from 'diff';
+import { DiffInformation, DiffType, LineInformation } from './redline-diff-viewer/compute-lines';
 
 /**
  * Props for the Workflow component
@@ -265,6 +266,7 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
   const [finalText, setFinalText] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [lineInformation, setLineInformation] = useState<LineInformation[]>([]);
 
   /**
    * Steps in the workflow
@@ -276,6 +278,7 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
     { label: 'Review', state: 'review', number: '4' },
     { label: 'Complete', state: 'complete', number: '5' },
   ];
+
 
   /**
    * Handles line number click events in the diff view.
@@ -303,6 +306,14 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
     },
     []
   );
+
+  /**
+   * Handles line information from the RedlineDiff component
+   * @param lineInfo - Array of line information from the diff
+   */
+  const handleLineInformation = (lineInfo: LineInformation[]) => {
+    setLineInformation(lineInfo);
+  };
 
   /**
    * Sends the initial edit request to the AI API
@@ -370,93 +381,69 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
     setError(null);
     setWorkflowState('finalizing');
     try {
-      const originalTextNormalized = normalizeText(inputText).trimEnd();
-      const modifiedTextNormalized = normalizeText(modifiedText).trimEnd();
-
-      const diff = diffLines(originalTextNormalized, modifiedTextNormalized);
-
-      let origLineNum = 1;
-      let modLineNum = 1;
-
       const finalLines: string[] = [];
 
-      let i = 0;
+      console.log("lineInformation", lineInformation);
 
-      while (i < diff.length) {
-        const part = diff[i];
-        const lines = part.value.split('\n');
-        if (lines[lines.length - 1] === '') lines.pop();
-
-        if (part.removed && i + 1 < diff.length && diff[i + 1].added) {
-          // This is a modification (removed followed by added)
-          const removedLines = lines;
-          const addedPart = diff[i + 1];
-          const addedLines = addedPart.value.split('\n');
-          if (addedLines[addedLines.length - 1] === '') addedLines.pop();
-
-          for (let j = 0; j < Math.max(removedLines.length, addedLines.length); j++) {
-            const lineIdRemoved = `L-${origLineNum}`;
-            const lineIdAdded = `R-${modLineNum}`;
-
-            const originalLine = removedLines[j];
-            const modifiedLine = addedLines[j];
-
-            console.log(`Processing modification between ${lineIdRemoved} and ${lineIdAdded}`);
-
-            if (selectedLines.has(lineIdAdded)) {
-              if (modifiedLine !== undefined) {
-                finalLines.push(modifiedLine);
-              }
-            } else {
-              if (originalLine !== undefined) {
-                finalLines.push(originalLine);
-              }
-            }
-
-            if (originalLine !== undefined) origLineNum++;
-            if (modifiedLine !== undefined) modLineNum++;
-          }
-
-          i += 2; // Skip the next part since we've processed it
-        } else if (part.added) {
-          // Added lines without corresponding removal
-          lines.forEach((line) => {
-            const lineId = `R-${modLineNum}`;
-            console.log(`Processing added line ${lineId}: "${line}"`);
-
-            if (selectedLines.has(lineId)) {
-              finalLines.push(line);
-            }
-            modLineNum++;
-          });
-          i++;
-        } else if (part.removed) {
-          // Removed lines without corresponding addition
-          lines.forEach((line) => {
-            const lineId = `L-${origLineNum}`;
-            console.log(`Processing removed line ${lineId}: "${line}"`);
-
-            // Unless the user wants to remove this line, we include it
-            finalLines.push(line);
-            origLineNum++;
-          });
-          i++;
+      /**
+       * Helper function to extract text from line value.
+       * @param line - The DiffInformation object (either left or right)
+       * @returns The text content of the line
+       */
+      const getLineValue = (line: DiffInformation | undefined): string => {
+        if (!line || !line.value) {
+          return '';
+        } else if (typeof line.value === 'string') {
+          return line.value;
+        } else if (Array.isArray(line.value)) {
+          // line.value is DiffInformation[]
+          return line.value.map((diffInfo: DiffInformation) => diffInfo.value ?? '').join('');
         } else {
-          // Unchanged lines
-          lines.forEach((line) => {
-            finalLines.push(line);
-            origLineNum++;
-            modLineNum++;
-          });
-          i++;
+          return '';
         }
-      }
+      };
 
-      console.log('Final Combined Lines:', finalLines);
+      lineInformation.forEach((lineInfo) => {
+        const { left, right } = lineInfo;
+
+        const leftLineId = left?.lineNumber ? `L-${left.lineNumber}` : null;
+        const rightLineId = right?.lineNumber ? `R-${right.lineNumber}` : null;
+
+        if (left?.type === DiffType.REMOVED && right?.type === DiffType.ADDED) {
+          // This is a modified line
+          if (rightLineId && selectedLines.has(rightLineId)) {
+            // User selected the modified (added) line
+            const rightLineValue = getLineValue(right);
+            finalLines.push(rightLineValue);
+          } else {
+            // Keep the original line
+            const leftLineValue = getLineValue(left);
+            finalLines.push(leftLineValue);
+          }
+        } else if (left?.type === DiffType.REMOVED) {
+          // Line was removed
+          if (!leftLineId || !selectedLines.has(leftLineId)) {
+            // If the user didn't select the removal, keep the original line
+            const leftLineValue = getLineValue(left);
+            finalLines.push(leftLineValue);
+          }
+        } else if (right?.type === DiffType.ADDED) {
+          // Line was added
+          if (rightLineId && selectedLines.has(rightLineId)) {
+            // User selected this added line
+            const rightLineValue = getLineValue(right);
+            finalLines.push(rightLineValue);
+          }
+          // Else, skip adding this line
+        } else {
+          // Unchanged line
+          const leftLineValue = getLineValue(left);
+          finalLines.push(leftLineValue);
+        }
+      });
 
       const finalEditedText = finalLines.join('\n');
-
-      console.log('Final Edited Text:', finalEditedText);
+      console.log('Final edited text:', finalEditedText);
 
       setFinalText(finalEditedText);
       setWorkflowState('review');
@@ -569,6 +556,7 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
             newValue={modifiedText}
             onLineNumberClick={handleLineNumberClick}
             selectedLines={selectedLines}
+            onLineInformation={handleLineInformation}
           />
           <Button
             onClick={handleFinalize}

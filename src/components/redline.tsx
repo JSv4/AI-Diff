@@ -1,6 +1,8 @@
-import { FC } from 'react';
-import DiffViewer, { DiffMethod, LineNumberPrefix, ReactDiffViewerStylesOverride } from 'react-diff-viewer';
+import { FC, useState } from 'react';
 import styled from '@emotion/styled';
+import { ReactDiffViewerStylesOverride } from './redline-diff-viewer/styles';
+import DiffViewer, { DiffMethod, LineNumberPrefix } from './redline-diff-viewer';
+import { LineInformation, DiffInformation } from './redline-diff-viewer/compute-lines';
 
 /**
  * Props for the RedlineDiff component
@@ -10,7 +12,8 @@ interface RedlineDiffProps {
     newValue: string;
     onLineNumberClick: (lineId: string, content: string) => void;
     selectedLines: Set<string>; // e.g., Set of 'L-3', 'R-5'
-  }
+    onLineInformation?: (lineInformation: LineInformation[]) => void;
+}
 
 const DiffContainer = styled.div`
   font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
@@ -98,7 +101,9 @@ export const RedlineDiff: FC<RedlineDiffProps> = ({
     newValue,
     onLineNumberClick,
     selectedLines,
+    onLineInformation,
 }) => {
+  const [lineInfo, setLineInfo] = useState<LineInformation[]>([]);
 
   const styles: ReactDiffViewerStylesOverride = {
     variables: {
@@ -134,14 +139,35 @@ export const RedlineDiff: FC<RedlineDiffProps> = ({
           const side = lineId.startsWith(LineNumberPrefix.LEFT) ? 'left' : 'right';
           const lineNumber = parseInt(lineId.substring(2), 10);
 
-          // Get content from the appropriate side
-          const lines = side === 'left' ? oldValue.split('\n') : newValue.split('\n');
-          const content = lines[lineNumber - 1] || ''; // Adjust for zero-based index
+          // Get content using lineInformation
+          let content = '';
+          for (const line of lineInfo) {
+            const info = line[side as 'left' | 'right'];
+            if (info && info.lineNumber === lineNumber) {
+              if (Array.isArray(info.value)) {
+                // If value is an array (word diff), concatenate the text
+                content = (info.value as DiffInformation[])
+                  .map((diff) => (diff.value as string))
+                  .join('');
+              } else {
+                content = info.value as string;
+              }
+              break;
+            }
+          }
 
           onLineNumberClick(lineId, content);
         }}
         highlightLines={[...selectedLines]}
         styles={styles}
+        onLineRender={(lineInformation: LineInformation[]) => {
+          // Store lineInformation in state
+          setLineInfo(lineInformation);
+          // Pass the lineInformation back to parent if the prop is provided
+          if (onLineInformation) {
+            onLineInformation(lineInformation);
+          }
+        }}
       />
     </DiffContainer>
   );
