@@ -12,18 +12,8 @@ interface WorkflowProps {
 }
 
 /**
- * Represents a selected change in the diff
- */
-interface SelectedChange {
-  lineNumber: number;
-  type: 'add' | 'remove';
-  text: string;
-}
-
-/**
  * Possible states of the workflow
  */
-type WorkflowState = 'input' | 'selection' | 'finalizing' | 'complete';
 
 const Container = styled.div`
   max-width: 1200px;
@@ -142,7 +132,7 @@ const StepIndicator = styled.div`
     right: 0;
     height: 2px;
     background: #e0e0e0;
-    z-index: 0;
+    z-index: -1;
   }
 `;
 
@@ -220,6 +210,7 @@ const ResetButton = styled.button`
   font-weight: 500;
   font-size: 0.9rem;
   transition: all 0.2s ease;
+  z-index: 10;
   
   &:hover {
     transform: translateY(-50%) translateY(-1px);
@@ -231,18 +222,27 @@ const ResetButton = styled.button`
   }
 `;
 
+const ButtonGroup = styled.div`
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+`;
+
 /**
  * Workflow component that manages the editing flow of text using AI
  * @param apiKey - OpenAI API key
  */
 export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
-  const [inputText, setInputText] = useState<string>('');
-  const [prompt, setPrompt] = useState<string>('');
-  const [modifiedText, setModifiedText] = useState<string | null>(null);
-  const [finalText, setFinalText] = useState<string | null>(null);
-  const [selectedChanges, setSelectedChanges] = useState<SelectedChange[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  type WorkflowState = 'input' | 'selection' | 'finalizing' | 'review' | 'complete';
+
   const [workflowState, setWorkflowState] = useState<WorkflowState>('input');
+  const [prompt, setPrompt] = useState<string>('');
+  const [inputText, setInputText] = useState<string>('Your original text...');
+  const [modifiedText, setModifiedText] = useState<string>('');
+  const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
+  const [selectedLineContents, setSelectedLineContents] = useState<Map<string, string>>(new Map());
+  const [finalText, setFinalText] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   /**
@@ -251,54 +251,39 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
   const steps = [
     { label: 'Input', state: 'input', number: '1' },
     { label: 'Selection', state: 'selection', number: '2' },
-    { label: 'Finalizing', state: 'finalizing', number: '3' },
-    { label: 'Complete', state: 'complete', number: '4' },
+    { label: 'Finalize', state: 'finalizing', number: '3' },
+    { label: 'Review', state: 'review', number: '4' },
+    { label: 'Complete', state: 'complete', number: '5' },
   ];
 
   /**
-   * Computes selected lines for the RedlineDiff component based on selectedChanges
+   * Handles line number click events in the diff view.
+   * @param lineId - The line ID (e.g., 'L-3' or 'R-5').
+   * @param content - The content of the line.
    */
-  const selectedLines = selectedChanges.map((change) => {
-    const side = change.type === 'add' ? 'R' : 'L';
-    return `${side}-${change.lineNumber}`;
-  });
-
-  /**
-   * Handles line click events in the diff view.
-   * Ensures that only one change per line can be selected.
-   * @param lineNumber - The line number that was clicked.
-   * @param type - The type of change ('add' or 'remove').
-   */
-  const handleLineClick = useCallback(
-    (lineNumber: number, type: 'add' | 'remove') => {
-      setSelectedChanges((prev) => {
-        // Remove any existing change at this line number
-        const updatedChanges = prev.filter(
-          (change) => change.lineNumber !== lineNumber
-        );
-
-        // Determine if the current change was already selected
-        const wasSelected = prev.some(
-          (change) =>
-            change.lineNumber === lineNumber && change.type === type
-        );
-
-        // If the change was not selected before, add it
-        if (!wasSelected) {
-          // Get the text from the appropriate version based on type
-          const text =
-            type === 'remove'
-              ? inputText.split('\n')[lineNumber - 1]
-              : modifiedText?.split('\n')[lineNumber - 1] || '';
-
-          return [...updatedChanges, { lineNumber, type, text }];
+  const handleLineNumberClick = useCallback(
+    (lineId: string, content: string) => {
+      setSelectedLines((prevSelectedLines) => {
+        const newSelectedLines = new Set(prevSelectedLines);
+        if (newSelectedLines.has(lineId)) {
+          newSelectedLines.delete(lineId);
+          setSelectedLineContents((prevContents) => {
+            const newContents = new Map(prevContents);
+            newContents.delete(lineId);
+            return newContents;
+          });
+        } else {
+          newSelectedLines.add(lineId);
+          setSelectedLineContents((prevContents) => {
+            const newContents = new Map(prevContents);
+            newContents.set(lineId, content);
+            return newContents;
+          });
         }
-
-        // If it was already selected, return the updated changes without adding it (deselect)
-        return updatedChanges;
+        return newSelectedLines;
       });
     },
-    [inputText, modifiedText]
+    []
   );
 
   /**
@@ -312,30 +297,31 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           model: 'gpt-4',
           messages: [
             {
               role: 'system',
-              content: 'No matter what the user asks, your job is to interpret it as a request for edits to the text to meet the user\'s requirements. You will return only the edited text, no other commentary, in its entirety, wrapped in ||| and ||| tags.' // TODO: Replace with actual prompt template
+              content:
+                'No matter what the user asks, your job is to interpret it as a request for edits to the text to meet the user\'s requirements. You will return only the edited text, no other commentary, in its entirety, wrapped in ||| and ||| tags.',
             },
             {
               role: 'user',
-              content: `${prompt}\n\nText to edit:\n${inputText}`
-            }
-          ]
-        })
+              content: `${prompt}\n\nText to edit:\n${inputText}`,
+            },
+          ],
+        }),
       });
-      
+
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
       }
 
       const data = await response.json();
       console.log('API Response:', data);
-      
+
       const content = data.choices[0]?.message?.content;
       if (!content) {
         throw new Error('No content in API response');
@@ -343,7 +329,7 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
 
       const extracted = extractModifiedText(content);
       console.log('Extracted content:', extracted);
-      
+
       if (!extracted) {
         throw new Error('Failed to extract modified text from response');
       }
@@ -360,89 +346,37 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
 
   /**
    * Finalizes the selected changes by processing the user's selections
-   * and sending them to the AI API to generate the final text.
+   * and generating the final text using an LLM.
    */
   const handleFinalize = async () => {
     setIsLoading(true);
     setError(null);
-
+    setWorkflowState('finalizing');
     try {
-      // Split the input and modified texts into arrays of lines
-      const inputLines = inputText.split('\n');
-      const modifiedLines = modifiedText ? modifiedText.split('\n') : [];
+      // Prepare the selected lines for the LLM
+      const selectedLinesArray = Array.from(selectedLineContents.values());
+      const selectedText = selectedLinesArray.join('\n');
 
-      // Create a map for quick lookup of selected changes
-      const selectedChangesMap = new Map<string, boolean>();
-      selectedChanges.forEach((change) => {
-        const key = `${change.type}-${change.lineNumber}`;
-        selectedChangesMap.set(key, true);
-      });
-
-      // Build the desired lines array
-      const desiredLines: string[] = [];
-      let inputIndex = 0;
-      let modifiedIndex = 0;
-
-      while (inputIndex < inputLines.length || modifiedIndex < modifiedLines.length) {
-        const inputLine = inputLines[inputIndex];
-        const modifiedLine = modifiedLines[modifiedIndex];
-
-        // Determine if the current line is an addition, deletion, or unchanged
-        const isAddition = modifiedLine && (!inputLine || modifiedLine !== inputLine);
-        const isDeletion = inputLine && (!modifiedLine || modifiedLine !== inputLine);
-        const lineNumber = Math.max(inputIndex, modifiedIndex) + 1;
-
-        if (isAddition) {
-          const key = `add-${lineNumber}`;
-          if (selectedChangesMap.get(key)) {
-            // Include the added line from modified text
-            desiredLines.push(modifiedLine);
-          }
-          modifiedIndex++;
-        } else if (isDeletion) {
-          const key = `remove-${lineNumber}`;
-          if (!selectedChangesMap.get(key)) {
-            // Include the original line if not selected for removal
-            desiredLines.push(inputLine);
-          }
-          inputIndex++;
-        } else {
-          // Unchanged line, include from original text
-          desiredLines.push(inputLine);
-          inputIndex++;
-          modifiedIndex++;
-        }
-      }
-
-      // Prepare the prompt for the AI model
-      const aiPrompt = `
-Here is a list of lines in the desired order for the final text:
-
-${desiredLines.map((line, index) => `${index + 1}: ${line}`).join('\n')}
-
-Please combine these lines into a coherent document, making only minimal changes necessary for grammatical and syntactical correctness. Return the complete text without omitting any content.
-`;
-
-      // Call the AI API with the prepared prompt
+      // Send the selected lines to the LLM to combine into a single output
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           model: 'gpt-4',
           messages: [
             {
               role: 'system',
-              content: 'You are given a list of text lines in order. Your task is to combine these lines into a coherent and grammatically correct document. Make only minimal changes necessary for correctness.'
+              content: 'Your job is to combine the provided changed lines into a final edited text, ensuring coherence and readability. Return the full edited text, wrapped in ||| and |||.',
             },
             {
               role: 'user',
-              content: aiPrompt
-            }
-          ]
-        })
+              content: `Selected changes:\n${selectedText}\n\nOriginal text:\n${inputText}`,
+            },
+          ],
+        }),
       });
 
       if (!response.ok) {
@@ -450,26 +384,43 @@ Please combine these lines into a coherent document, making only minimal changes
       }
 
       const data = await response.json();
+      console.log('LLM Finalization Response:', data);
+
       const content = data.choices[0]?.message?.content;
-
       if (!content) {
-        throw new Error('No content in API response');
+        throw new Error('No content in LLM response');
       }
 
-      // Extract the final text from the AI's response
-      const extracted = extractModifiedText(content);
-      if (!extracted) {
-        throw new Error('Failed to extract modified text from response');
+      const finalEditedText = extractModifiedText(content);
+      console.log('Final Edited Text:', finalEditedText);
+
+      if (!finalEditedText) {
+        throw new Error('Failed to extract final text from LLM response');
       }
 
-      setFinalText(extracted);
-      setWorkflowState('complete');
-    } catch (error) {
-      console.error('Error during API call:', error);
-      setError(error instanceof Error ? error.message : 'An unknown error occurred');
+      setFinalText(finalEditedText);
+      setWorkflowState('review');
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : 'An error occurred while finalizing.');
+      setWorkflowState('selection');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  /**
+   * Proceeds to the complete state after the user reviews the final text
+   */
+  const handleComplete = () => {
+    setWorkflowState('complete');
+  };
+
+  /**
+   * Returns to the selection state from review
+   */
+  const handleBackToSelection = () => {
+    setWorkflowState('selection');
   };
 
   /**
@@ -485,11 +436,12 @@ Please combine these lines into a coherent document, making only minimal changes
    * Resets the workflow to the initial state
    */
   const resetWorkflow = () => {
-    setInputText('');
+    setInputText('Your original text...');
     setPrompt('');
-    setModifiedText(null);
-    setFinalText(null);
-    setSelectedChanges([]);
+    setModifiedText('');
+    setFinalText('');
+    setSelectedLines(new Set());
+    setSelectedLineContents(new Map());
     setWorkflowState('input');
     setError(null);
   };
@@ -499,14 +451,14 @@ Please combine these lines into a coherent document, making only minimal changes
       {/* Step Indicator */}
       <StepIndicator>
         {steps.map((step, index) => {
-          const isCompleted = 
-            steps.findIndex(s => s.state === workflowState) > index;
+          const currentStepIndex = steps.findIndex((s) => s.state === workflowState);
+          const isCompleted = currentStepIndex > index;
           const isActive = workflowState === step.state;
-          
+
           return (
-            <Step 
-              key={index} 
-              active={isActive} 
+            <Step
+              key={index}
+              active={isActive}
               completed={isCompleted}
               data-step={step.number}
             >
@@ -514,30 +466,24 @@ Please combine these lines into a coherent document, making only minimal changes
             </Step>
           );
         })}
-        <ResetButton onClick={resetWorkflow}>
-          Reset
-        </ResetButton>
+        <ResetButton onClick={resetWorkflow}>Reset</ResetButton>
       </StepIndicator>
 
-      {error && (
-        <ErrorMessage>
-          {error}
-        </ErrorMessage>
-      )}
+      {error && <ErrorMessage>{error}</ErrorMessage>}
 
       {workflowState === 'input' && (
         <>
           <MDEditor
             value={inputText}
-            onChange={value => setInputText(value || '')}
+            onChange={(value) => setInputText(value || '')}
             preview="edit"
           />
           <PromptInput
             value={prompt}
-            onChange={e => setPrompt(e.target.value)}
+            onChange={(e) => setPrompt(e.target.value)}
             placeholder="Enter your editing instructions..."
           />
-          <Button 
+          <Button
             onClick={handleInitialEdit}
             disabled={!inputText || !prompt || isLoading}
           >
@@ -546,7 +492,9 @@ Please combine these lines into a coherent document, making only minimal changes
                 <Spinner />
                 Processing...
               </>
-            ) : 'Edit'}
+            ) : (
+              'Edit'
+            )}
           </Button>
         </>
       )}
@@ -554,34 +502,57 @@ Please combine these lines into a coherent document, making only minimal changes
       {workflowState === 'selection' && (
         <>
           <RedlineDiff
-            input={inputText}
-            output={modifiedText || ''}
-            onLineClick={handleLineClick}
+            oldValue={inputText}
+            newValue={modifiedText}
+            onLineNumberClick={handleLineNumberClick}
             selectedLines={selectedLines}
           />
-          <Button 
+          <Button
             onClick={handleFinalize}
-            disabled={selectedChanges.length === 0 || isLoading}
+            disabled={isLoading || selectedLines.size === 0}
           >
             {isLoading ? (
               <>
                 <Spinner />
                 Finalizing...
               </>
-            ) : 'Finalize Selected Changes'}
+            ) : (
+              'Finalize Selected Changes'
+            )}
           </Button>
+        </>
+      )}
+
+      {workflowState === 'finalizing' && (
+        <Button disabled>
+          <Spinner />
+          Finalizing...
+        </Button>
+      )}
+
+      {workflowState === 'review' && finalText && (
+        <>
+          <RedlineDiff
+            oldValue={inputText}
+            newValue={finalText}
+            onLineNumberClick={() => {}}
+            selectedLines={new Set()}
+          />
+          <ButtonGroup>
+            <Button onClick={handleBackToSelection}>
+              Back to Selection
+            </Button>
+            <Button onClick={handleComplete}>
+              Proceed to Final Text
+            </Button>
+          </ButtonGroup>
         </>
       )}
 
       {workflowState === 'complete' && finalText && (
         <>
-          <RedlineDiff
-            input={inputText}
-            output={finalText}
-          />
-          <Button onClick={copyToClipboard}>
-            Copy to Clipboard
-          </Button>
+          <MDEditor value={finalText} preview="edit" />
+          <Button onClick={copyToClipboard}>Copy to Clipboard</Button>
         </>
       )}
     </Container>
