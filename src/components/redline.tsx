@@ -129,7 +129,7 @@ export const RedlineDiff: FC<RedlineDiffProps> = ({
         splitView={true}
         compareMethod={DiffMethod.WORDS}
         renderContent={(source: string) => <pre>{source}</pre>}
-        onLineNumberClick={(lineId, event) => {
+        onLineNumberClick={(lineId) => {
           // Determine side and line number
           const side = lineId.startsWith(LineNumberPrefix.LEFT) ? 'left' : 'right';
           const lineNumber = parseInt(lineId.substring(2), 10);

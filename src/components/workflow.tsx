@@ -262,7 +262,6 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
   const [inputText, setInputText] = useState<string>('Your original text...');
   const [modifiedText, setModifiedText] = useState<string>('');
   const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
-  const [selectedLineContents, setSelectedLineContents] = useState<Map<string, string>>(new Map());
   const [finalText, setFinalText] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -301,19 +300,6 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
         return newSelectedLines;
       });
 
-      setSelectedLineContents((prevContents) => {
-        const newContents = new Map(prevContents);
-        if (newContents.has(lineId)) {
-          newContents.delete(lineId);
-          console.log(`Removed content for LineId: ${lineId}`);
-        } else {
-          newContents.set(lineId, content);
-          console.log(`Stored content for LineId: ${lineId}: "${content}"`);
-        }
-        // Log the currently selected line contents
-        console.log('Updated Selected Line Contents:', Array.from(newContents.entries()));
-        return newContents;
-      });
     },
     []
   );
@@ -517,7 +503,6 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
     setModifiedText('');
     setFinalText('');
     setSelectedLines(new Set());
-    setSelectedLineContents(new Map());
     setWorkflowState('input');
     setError(null);
   };

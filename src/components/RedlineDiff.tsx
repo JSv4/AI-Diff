@@ -1,4 +1,4 @@
-import React, { FC } from 'react';
+import { FC } from 'react';
 import DiffViewer, { DiffMethod, LineNumberPrefix, ReactDiffViewerStylesOverride } from 'react-diff-viewer';
 import styled from '@emotion/styled';
 
