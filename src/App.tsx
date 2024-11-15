@@ -110,6 +110,9 @@ const Main = styled.main`
   padding: 2rem;
   max-width: 1400px;
   margin: 0 auto;
+  min-height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
 `
 
 /**
@@ -137,9 +140,10 @@ function App() {
       0 4px 24px rgba(0, 0, 0, 0.06),
       0 1px 0 rgba(255, 255, 255, 0.6) inset;
     max-width: 600px;
-    margin: 3rem auto;
+    margin: auto;
     gap: 1.5rem;
     position: relative;
+    text-align: center;
     
     &::before {
       content: '';
@@ -152,6 +156,57 @@ function App() {
       border-radius: 16px;
       z-index: -1;
       opacity: 0.1;
+    }
+  `
+
+  const WelcomeText = styled.div`
+    margin-bottom: 2rem;
+    
+    h2 {
+      font-size: 1.8rem;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, #0066cc, #00a3cc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 700;
+    }
+    
+    p {
+      color: #666;
+      line-height: 1.6;
+      font-size: 1.1rem;
+      margin-bottom: 1rem;
+    }
+  `
+
+  const FeatureList = styled.ul`
+    list-style: none;
+    padding: 0;
+    margin: 2rem 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    width: 100%;
+    text-align: left;
+  `
+
+  const FeatureItem = styled.li`
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    
+    span {
+      background: linear-gradient(135deg, #0066cc, #00a3cc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+    
+    p {
+      margin: 0;
+      color: #666;
+      font-size: 0.95rem;
     }
   `
 
@@ -228,6 +283,33 @@ function App() {
       <Main>
         {!isKeySet ? (
           <KeyForm onSubmit={handleSubmitKey}>
+            <WelcomeText>
+              <h2>Welcome to LLM Redlines</h2>
+              <p>
+                Transform your text editing experience with AI-powered suggestions and revisions.
+                Get started by entering your OpenAI API key below.
+              </p>
+            </WelcomeText>
+            
+            <FeatureList>
+              <FeatureItem>
+                <span>🎯</span>
+                <p>Smart suggestions that understand context and intent</p>
+              </FeatureItem>
+              <FeatureItem>
+                <span>⚡️</span>
+                <p>Real-time editing with instant AI feedback</p>
+              </FeatureItem>
+              <FeatureItem>
+                <span>🔄</span>
+                <p>Review and select changes with intuitive diff view</p>
+              </FeatureItem>
+              <FeatureItem>
+                <span>🔒</span>
+                <p>Secure processing using your own API key</p>
+              </FeatureItem>
+            </FeatureList>
+
             <KeyInput
               type="password"
               placeholder="Enter your OpenAI API key"
@@ -238,6 +320,22 @@ function App() {
             <KeyButton type="submit">
               Start Editing
             </KeyButton>
+            
+            <small style={{ 
+              marginTop: '1rem', 
+              color: '#666', 
+              fontSize: '0.9rem' 
+            }}>
+              Don't have an API key? Get one from <a 
+                href="https://platform.openai.com/api-keys" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                style={{ 
+                  color: '#0066cc', 
+                  textDecoration: 'none' 
+                }}
+              >OpenAI</a>
+            </small>
           </KeyForm>
         ) : (
           <Workflow apiKey={apiKey} />

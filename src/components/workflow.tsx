@@ -17,7 +17,7 @@ interface WorkflowProps {
  */
 
 const Container = styled.div`
-  max-width: 1200px;
+  max-width: 90%;
   margin: 0 auto;
   padding: 2rem;
   background: linear-gradient(to bottom, #ffffff, #f8f9fa);
@@ -27,6 +27,27 @@ const Container = styled.div`
   border-radius: 16px;
   position: relative;
   z-index: 0;
+  min-height: calc(100vh - 300px);
+  display: flex;
+  flex-direction: column;
+
+  .w-md-editor {
+    flex: 1;
+    min-height: 500px;
+    margin-bottom: 1rem;
+
+    .w-md-editor-toolbar {
+      svg {
+        width: 20px;
+        height: 20px;
+      }
+      
+      li > button {
+        padding: 8px 12px;
+        margin: 0 2px;
+      }
+    }
+  }
 `;
 
 const Button = styled.button`
