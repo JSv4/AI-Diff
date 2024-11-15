@@ -345,64 +345,53 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
   };
 
   /**
-   * Finalizes the selected changes by processing the user's selections
-   * and generating the final text using an LLM.
+   * Finalizes the selected changes by merging them into the original text.
    */
   const handleFinalize = async () => {
     setIsLoading(true);
     setError(null);
     setWorkflowState('finalizing');
     try {
-      // Prepare the selected lines for the LLM
-      const selectedLinesArray = Array.from(selectedLineContents.values());
-      const selectedText = selectedLinesArray.join('\n');
+      // Split the original and modified texts into arrays of lines
+      const originalLines: string[] = inputText.split('\n');
+      const modifiedLines: string[] = modifiedText.split('\n');
 
-      // Send the selected lines to the LLM to combine into a single output
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4',
-          messages: [
-            {
-              role: 'system',
-              content: 'Your job is to combine the provided changed lines into a final edited text, ensuring coherence and readability. Return the full edited text, wrapped in ||| and |||.',
-            },
-            {
-              role: 'user',
-              content: `Selected changes:\n${selectedText}\n\nOriginal text:\n${inputText}`,
-            },
-          ],
-        }),
-      });
+      // Create a set of selected line numbers for quick lookup
+      const selectedLineNumbers: Set<number> = new Set(
+        Array.from(selectedLineContents.keys()).map((lineId: string) => {
+          // Extract line number from lineId (e.g., 'R-5' => 5)
+          const parts: string[] = lineId.split('-');
+          return parseInt(parts[1], 10) - 1; // Adjusting for zero-based index
+        })
+      );
 
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+      // Construct the final lines array
+      const finalLines: string[] = [];
+
+      for (let i = 0; i < originalLines.length; i++) {
+        if (selectedLineNumbers.has(i)) {
+          const modifiedLine: string = modifiedLines[i] || '';
+          if (modifiedLine.trim() !== '') {
+            // Replace original line with modified line
+            finalLines.push(modifiedLine);
+          }
+          // If the modified line is empty, skip adding it (line is removed)
+        } else {
+          // Use the original line
+          finalLines.push(originalLines[i]);
+        }
       }
 
-      const data = await response.json();
-      console.log('LLM Finalization Response:', data);
-
-      const content = data.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No content in LLM response');
-      }
-
-      const finalEditedText = extractModifiedText(content);
+      const finalEditedText: string = finalLines.join('\n');
       console.log('Final Edited Text:', finalEditedText);
-
-      if (!finalEditedText) {
-        throw new Error('Failed to extract final text from LLM response');
-      }
 
       setFinalText(finalEditedText);
       setWorkflowState('review');
     } catch (err) {
       console.error(err);
-      setError(err instanceof Error ? err.message : 'An error occurred while finalizing.');
+      setError(
+        err instanceof Error ? err.message : 'An error occurred while finalizing.'
+      );
       setWorkflowState('selection');
     } finally {
       setIsLoading(false);
