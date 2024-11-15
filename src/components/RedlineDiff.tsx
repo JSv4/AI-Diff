@@ -54,7 +54,7 @@ const RedlineDiff: FC<RedlineDiffProps> = ({
         splitView={true}
         compareMethod={DiffMethod.WORDS}
         renderContent={(source: string) => <pre>{source}</pre>}
-        onLineNumberClick={(lineId: string, event: React.MouseEvent<HTMLTableCellElement>) => {
+        onLineNumberClick={(lineId: string) => {
           // Determine side and line number
           const side = lineId.startsWith(LineNumberPrefix.LEFT) ? 'left' : 'right';
           const lineNumber = parseInt(lineId.substring(2), 10);

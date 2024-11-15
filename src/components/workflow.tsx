@@ -1,9 +1,9 @@
-import React, { FC, useState, useCallback } from 'react';
+import { FC, useState, useCallback } from 'react';
 import { RedlineDiff } from './redline';
 import { extractModifiedText } from '../utils/parse';
 import MDEditor from '@uiw/react-md-editor';
 import styled from '@emotion/styled';
-import { diffLines, Change } from 'diff';
+import { diffLines } from 'diff';
 
 /**
  * Props for the Workflow component
