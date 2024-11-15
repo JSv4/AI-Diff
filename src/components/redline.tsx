@@ -1,8 +1,8 @@
 import { FC, useState } from 'react';
 import styled from '@emotion/styled';
 import { ReactDiffViewerStylesOverride } from './redline-diff-viewer/styles';
-import DiffViewer, { DiffMethod, LineNumberPrefix } from './redline-diff-viewer';
-import { LineInformation, DiffInformation } from './redline-diff-viewer/compute-lines';
+import DiffViewer, { DiffMethod } from './redline-diff-viewer';
+import { LineInformation } from './redline-diff-viewer/compute-lines';
 
 /**
  * Props for the RedlineDiff component
@@ -128,6 +128,46 @@ export const RedlineDiff: FC<RedlineDiffProps> = ({
     },
   };
 
+  // Adapter function that matches the signature expected by DiffViewer
+  const handleLineNumberClick = (
+    lineId: string,
+    event: React.MouseEvent<HTMLTableCellElement, MouseEvent>
+  ) => {
+    if (onLineNumberClick) {
+      const lineContent = findLineContent(lineId);
+      onLineNumberClick(lineId, lineContent);
+    }
+  };
+
+  // Helper function to find line content based on lineId
+  const findLineContent = (lineId: string): string => {
+    // lineId format is 'L-3' or 'R-4'
+    const [side, lineNumStr] = lineId.split('-');
+    const lineNum = parseInt(lineNumStr, 10);
+
+    const lineItem = lineInfo.find((lineInfoItem) => {
+      const { left, right } = lineInfoItem;
+
+      if (side === 'L' && left && left.lineNumber === lineNum) {
+        return true;
+      }
+      if (side === 'R' && right && right.lineNumber === lineNum) {
+        return true;
+      }
+      return false;
+    });
+
+    if (lineItem) {
+      if (side === 'L' && lineItem.left) {
+        return lineItem.left.value as string;
+      } else if (side === 'R' && lineItem.right) {
+        return lineItem.right.value as string;
+      }
+    }
+
+    return '';
+  };
+
   return (
     <DiffContainer>
       <DiffViewer
@@ -137,15 +177,14 @@ export const RedlineDiff: FC<RedlineDiffProps> = ({
         splitView={true}
         compareMethod={DiffMethod.WORDS}
         renderContent={(source: string) => <pre>{source}</pre>}
-        onLineNumberClick={onLineNumberClick}
         highlightLines={selectedLines ? [...selectedLines] : []}
         styles={styles}
+        onLineNumberClick={handleLineNumberClick} // Use the adapter function
         onLineRender={(renderedLineInformation: LineInformation[]) => {
-          if (!precomputedLineInformation) {
-            setLineInfo(renderedLineInformation);
-            if (onLineInformation) {
-              onLineInformation(renderedLineInformation);
-            }
+          // Always update lineInfo to keep it in sync
+          setLineInfo(renderedLineInformation);
+          if (!precomputedLineInformation && onLineInformation) {
+            onLineInformation(renderedLineInformation);
           }
         }}
       />

@@ -384,9 +384,9 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
     try {
       const finalLines: string[] = [];
       const finalLineInformationTemp: LineInformation[] = [];
-  
+
       console.log("lineInformation", lineInformation);
-  
+
       /**
        * Helper function to extract text from line value.
        * @param line - The DiffInformation object (either left or right)
@@ -404,49 +404,66 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
           return '';
         }
       };
-  
+
       lineInformation.forEach((lineInfo) => {
         const { left, right } = lineInfo;
-  
+
         const leftLineId = left?.lineNumber ? `L-${left.lineNumber}` : null;
         const rightLineId = right?.lineNumber ? `R-${right.lineNumber}` : null;
-  
+
         let selectedLineInfo: LineInformation = {};
-  
+
         if (left?.type === DiffType.REMOVED && right?.type === DiffType.ADDED) {
           // This is a modified line
           if (rightLineId && selectedLines.has(rightLineId)) {
             // User selected the modified (added) line
             const rightLineValue = getLineValue(right);
             finalLines.push(rightLineValue);
-  
-            // Keep the modified line in finalLineInformation
+
+            // For finalLineInformation, keep left and right as is (showing the change)
             selectedLineInfo.left = left;
             selectedLineInfo.right = right;
           } else {
             // Keep the original line
             const leftLineValue = getLineValue(left);
             finalLines.push(leftLineValue);
-  
-            // Mark line as unchanged in finalLineInformation
-            selectedLineInfo.left = { ...left, type: DiffType.DEFAULT };
-            selectedLineInfo.right = { ...left, type: DiffType.DEFAULT };
+
+            // For finalLineInformation, set both sides to the original content as unchanged
+            selectedLineInfo.left = {
+              lineNumber: left.lineNumber,
+              type: DiffType.DEFAULT,
+              value: leftLineValue,
+            };
+            selectedLineInfo.right = {
+              lineNumber: left.lineNumber,
+              type: DiffType.DEFAULT,
+              value: leftLineValue,
+            };
           }
         } else if (left?.type === DiffType.REMOVED) {
           // Line was removed
-          if (!leftLineId || !selectedLines.has(leftLineId)) {
-            // If the user didn't select the removal, keep the original line
+          if (leftLineId && selectedLines.has(leftLineId)) {
+            // User selected the removal (accepted the deletion)
+            // Do not add this line to finalLines
+            // For finalLineInformation, keep left as is and right as undefined
+            selectedLineInfo.left = left;
+            selectedLineInfo.right = undefined;
+          } else {
+            // Keep the original line
             const leftLineValue = getLineValue(left);
             finalLines.push(leftLineValue);
-  
-            // Mark line as unchanged in finalLineInformation
-            selectedLineInfo.left = { ...left, type: DiffType.DEFAULT };
-            selectedLineInfo.right = { ...left, type: DiffType.DEFAULT };
-          } else {
-            // User selected the removal, so the line is removed
-            // We reflect this in finalLineInformation
-            selectedLineInfo.left = left;
-            selectedLineInfo.right = undefined; // Line removed
+
+            // For finalLineInformation, set both sides to the original content as unchanged
+            selectedLineInfo.left = {
+              lineNumber: left.lineNumber,
+              type: DiffType.DEFAULT,
+              value: leftLineValue,
+            };
+            selectedLineInfo.right = {
+              lineNumber: left.lineNumber,
+              type: DiffType.DEFAULT,
+              value: leftLineValue,
+            };
           }
         } else if (right?.type === DiffType.ADDED) {
           // Line was added
@@ -454,28 +471,40 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
             // User selected this added line
             const rightLineValue = getLineValue(right);
             finalLines.push(rightLineValue);
-  
-            // Include the added line in finalLineInformation
-            selectedLineInfo.left = undefined; // Line added
+
+            // For finalLineInformation, keep right as is and left as undefined
+            selectedLineInfo.left = undefined;
+            selectedLineInfo.right = right;
+          } else {
+            // Do not add this line to finalLines
+            // For finalLineInformation, keep left as undefined and right as is
+            selectedLineInfo.left = undefined;
             selectedLineInfo.right = right;
           }
-          // Else, skip adding this line
         } else {
           // Unchanged line
           const leftLineValue = getLineValue(left);
           finalLines.push(leftLineValue);
-  
-          // Keep the unchanged line in finalLineInformation
-          selectedLineInfo.left = left;
-          selectedLineInfo.right = right;
+
+          // For finalLineInformation, set both sides to the original content as unchanged
+          selectedLineInfo.left = {
+            lineNumber: left?.lineNumber,
+            type: DiffType.DEFAULT,
+            value: leftLineValue,
+          };
+          selectedLineInfo.right = {
+            lineNumber: right?.lineNumber,
+            type: DiffType.DEFAULT,
+            value: leftLineValue,
+          };
         }
-  
+
         finalLineInformationTemp.push(selectedLineInfo);
       });
-  
+
       const finalEditedText = finalLines.join('\n');
       console.log('Final edited text:', finalEditedText);
-  
+
       setFinalText(finalEditedText);
       setFinalLineInformation(finalLineInformationTemp);
       setWorkflowState('review');
