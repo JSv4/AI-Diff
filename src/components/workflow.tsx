@@ -267,6 +267,7 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [lineInformation, setLineInformation] = useState<LineInformation[]>([]);
+  const [finalLineInformation, setFinalLineInformation] = useState<LineInformation[]>([]);
 
   /**
    * Steps in the workflow
@@ -382,9 +383,10 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
     setWorkflowState('finalizing');
     try {
       const finalLines: string[] = [];
-
+      const finalLineInformationTemp: LineInformation[] = [];
+  
       console.log("lineInformation", lineInformation);
-
+  
       /**
        * Helper function to extract text from line value.
        * @param line - The DiffInformation object (either left or right)
@@ -402,23 +404,33 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
           return '';
         }
       };
-
+  
       lineInformation.forEach((lineInfo) => {
         const { left, right } = lineInfo;
-
+  
         const leftLineId = left?.lineNumber ? `L-${left.lineNumber}` : null;
         const rightLineId = right?.lineNumber ? `R-${right.lineNumber}` : null;
-
+  
+        let selectedLineInfo: LineInformation = {};
+  
         if (left?.type === DiffType.REMOVED && right?.type === DiffType.ADDED) {
           // This is a modified line
           if (rightLineId && selectedLines.has(rightLineId)) {
             // User selected the modified (added) line
             const rightLineValue = getLineValue(right);
             finalLines.push(rightLineValue);
+  
+            // Keep the modified line in finalLineInformation
+            selectedLineInfo.left = left;
+            selectedLineInfo.right = right;
           } else {
             // Keep the original line
             const leftLineValue = getLineValue(left);
             finalLines.push(leftLineValue);
+  
+            // Mark line as unchanged in finalLineInformation
+            selectedLineInfo.left = { ...left, type: DiffType.DEFAULT };
+            selectedLineInfo.right = { ...left, type: DiffType.DEFAULT };
           }
         } else if (left?.type === DiffType.REMOVED) {
           // Line was removed
@@ -426,6 +438,15 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
             // If the user didn't select the removal, keep the original line
             const leftLineValue = getLineValue(left);
             finalLines.push(leftLineValue);
+  
+            // Mark line as unchanged in finalLineInformation
+            selectedLineInfo.left = { ...left, type: DiffType.DEFAULT };
+            selectedLineInfo.right = { ...left, type: DiffType.DEFAULT };
+          } else {
+            // User selected the removal, so the line is removed
+            // We reflect this in finalLineInformation
+            selectedLineInfo.left = left;
+            selectedLineInfo.right = undefined; // Line removed
           }
         } else if (right?.type === DiffType.ADDED) {
           // Line was added
@@ -433,19 +454,30 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
             // User selected this added line
             const rightLineValue = getLineValue(right);
             finalLines.push(rightLineValue);
+  
+            // Include the added line in finalLineInformation
+            selectedLineInfo.left = undefined; // Line added
+            selectedLineInfo.right = right;
           }
           // Else, skip adding this line
         } else {
           // Unchanged line
           const leftLineValue = getLineValue(left);
           finalLines.push(leftLineValue);
+  
+          // Keep the unchanged line in finalLineInformation
+          selectedLineInfo.left = left;
+          selectedLineInfo.right = right;
         }
+  
+        finalLineInformationTemp.push(selectedLineInfo);
       });
-
+  
       const finalEditedText = finalLines.join('\n');
       console.log('Final edited text:', finalEditedText);
-
+  
       setFinalText(finalEditedText);
+      setFinalLineInformation(finalLineInformationTemp);
       setWorkflowState('review');
     } catch (err) {
       console.error('Error in handleFinalize:', err);
@@ -584,10 +616,7 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
       {workflowState === 'review' && finalText && (
         <>
           <RedlineDiff
-            oldValue={inputText}
-            newValue={finalText}
-            onLineNumberClick={() => {}}
-            selectedLines={new Set()}
+            lineInformation={finalLineInformation} // Pass precomputed lineInformation
           />
           <ButtonGroup>
             <Button onClick={handleBackToSelection}>

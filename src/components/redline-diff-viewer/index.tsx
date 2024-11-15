@@ -46,6 +46,9 @@ export interface ReactDiffViewerProps {
 	renderContent?: (source: string) => JSX.Element;
 	// Render prop to format code fold message.
   onLineRender?: (lineInformation: LineInformation[]) => void;
+  // Precomputed line information (for review use cases where user built up final changes)
+  lineInformation?: LineInformation[]; // New optional prop
+
 
 	codeFoldMessageRenderer?: (
 		totalFoldedLines: number,
@@ -522,23 +525,34 @@ class DiffViewer extends React.Component<
       disableWordDiff,
       compareMethod,
       linesOffset,
+      lineInformation: propLineInformation,
     } = this.props;
-    const { lineInformation, diffLines } = computeLineInformation(
-      oldValue,
-      newValue,
-      noise,
-      disableWordDiff,
-      compareMethod,
-      linesOffset
-    );
 
+    const diffLines: number[] = [];
+    this.lineInformation = [];
+
+    if (propLineInformation && propLineInformation.length > 0) {
+      this.lineInformation = propLineInformation;
+    } else {
+      const result = computeLineInformation(
+        oldValue || '',
+        newValue || '',
+        noise || [],
+        disableWordDiff || false,
+        compareMethod || DiffMethod.CHARS,
+        linesOffset || 0
+      );
+      this.lineInformation = result.lineInformation;
+      diffLines.push(...result.diffLines);
+    }
+  
     const extraLines =
       this.props.extraLinesSurroundingDiff && this.props.extraLinesSurroundingDiff > 0
         ? this.props.extraLinesSurroundingDiff
         : 0;
     let skippedLines: number[] = [];
 
-    return lineInformation.map((line, i) => {
+    return this.lineInformation.map((line, i) => {
       const diffBlockStart = diffLines[0];
       const currentPosition = diffBlockStart - i;
       if (this.props.showDiffOnly) {
@@ -552,7 +566,7 @@ class DiffViewer extends React.Component<
           !this.state.expandedBlocks.includes(diffBlockStart)
         ) {
           skippedLines.push(i + 1);
-          if (i === lineInformation.length - 1 && skippedLines.length > 1) {
+          if (i === this.lineInformation.length - 1 && skippedLines.length > 1) {
             return this.renderSkippedLineIndicator(
               skippedLines.length,
               diffBlockStart,

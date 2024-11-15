@@ -8,11 +8,12 @@ import { LineInformation, DiffInformation } from './redline-diff-viewer/compute-
  * Props for the RedlineDiff component
  */
 interface RedlineDiffProps {
-    oldValue: string;
-    newValue: string;
-    onLineNumberClick: (lineId: string, content: string) => void;
-    selectedLines: Set<string>; // e.g., Set of 'L-3', 'R-5'
+    oldValue?: string;
+    newValue?: string;
+    onLineNumberClick?: (lineId: string, content: string) => void;
+    selectedLines?: Set<string>; // e.g., Set of 'L-3', 'R-5'
     onLineInformation?: (lineInformation: LineInformation[]) => void;
+    lineInformation?: LineInformation[]; // New optional prop
 }
 
 const DiffContainer = styled.div`
@@ -102,6 +103,7 @@ export const RedlineDiff: FC<RedlineDiffProps> = ({
     onLineNumberClick,
     selectedLines,
     onLineInformation,
+    lineInformation: precomputedLineInformation, // New prop
 }) => {
   const [lineInfo, setLineInfo] = useState<LineInformation[]>([]);
 
@@ -131,41 +133,19 @@ export const RedlineDiff: FC<RedlineDiffProps> = ({
       <DiffViewer
         oldValue={oldValue}
         newValue={newValue}
+        lineInformation={precomputedLineInformation} // Pass precomputed lineInformation
         splitView={true}
         compareMethod={DiffMethod.WORDS}
         renderContent={(source: string) => <pre>{source}</pre>}
-        onLineNumberClick={(lineId) => {
-          // Determine side and line number
-          const side = lineId.startsWith(LineNumberPrefix.LEFT) ? 'left' : 'right';
-          const lineNumber = parseInt(lineId.substring(2), 10);
-
-          // Get content using lineInformation
-          let content = '';
-          for (const line of lineInfo) {
-            const info = line[side as 'left' | 'right'];
-            if (info && info.lineNumber === lineNumber) {
-              if (Array.isArray(info.value)) {
-                // If value is an array (word diff), concatenate the text
-                content = (info.value as DiffInformation[])
-                  .map((diff) => (diff.value as string))
-                  .join('');
-              } else {
-                content = info.value as string;
-              }
-              break;
-            }
-          }
-
-          onLineNumberClick(lineId, content);
-        }}
-        highlightLines={[...selectedLines]}
+        onLineNumberClick={onLineNumberClick}
+        highlightLines={selectedLines ? [...selectedLines] : []}
         styles={styles}
-        onLineRender={(lineInformation: LineInformation[]) => {
-          // Store lineInformation in state
-          setLineInfo(lineInformation);
-          // Pass the lineInformation back to parent if the prop is provided
-          if (onLineInformation) {
-            onLineInformation(lineInformation);
+        onLineRender={(renderedLineInformation: LineInformation[]) => {
+          if (!precomputedLineInformation) {
+            setLineInfo(renderedLineInformation);
+            if (onLineInformation) {
+              onLineInformation(renderedLineInformation);
+            }
           }
         }}
       />
