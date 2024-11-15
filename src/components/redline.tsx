@@ -19,44 +19,51 @@ const DiffContainer = styled.div`
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
   margin: 1rem 0;
 
-  // Style overrides for react-diff-viewer
+  /* Style overrides for react-diff-viewer */
   .diff-viewer {
     background: #ffffff;
   }
 
   .diff-container {
     border-radius: 8px;
-    display: flex !important;
-    
-    & > tbody {
-      width: 100%;
-      display: flex;
-    }
-    
+    width: 100%;
+    table-layout: fixed; /* Ensure table takes up the full width */
+    border-collapse: collapse;
+
     & > tbody > tr {
-      display: flex;
       width: 100%;
+      display: table-row;
     }
-    
+
     td {
-      flex: 1;
-      width: 50%;
-      min-width: 0;
+      vertical-align: top;
+      word-break: break-word;
+    }
+
+    .diff-gutter {
+      width: 50px; /* Fixed width for line numbers */
+      background-color: #f8f9fa;
+      color: #6c757d;
+      padding: 0 1rem;
+    }
+
+    .diff-line-number {
+      width: 50px; /* Ensure consistent width for line numbers */
+    }
+
+    .marker {
+      width: 20px; /* Fixed width for change markers (+, -, etc.) */
+      text-align: center;
+    }
+
+    .content {
+      width: calc(50% - 70px); /* Adjust based on gutter and marker widths */
+      padding: 1rem;
     }
   }
 
   .selected-line {
     background-color: rgba(0, 123, 255, 0.1);
-  }
-
-  .diff-gutter {
-    background-color: #f8f9fa;
-    color: #6c757d;
-    padding: 0 1rem;
-  }
-
-  .diff-code {
-    padding: 1rem !important;
   }
 
   .diff-line {
@@ -72,18 +79,10 @@ const DiffContainer = styled.div`
 
   .diff-add {
     background-color: #e6ffed !important;
-    
-    .diff-code {
-      background-color: #e6ffed !important;
-    }
   }
 
   .diff-remove {
     background-color: #ffe6e6 !important;
-    
-    .diff-code {
-      background-color: #ffe6e6 !important;
-    }
   }
 
   .selected-line-number {
@@ -130,7 +129,7 @@ export const RedlineDiff: FC<RedlineDiffProps> = ({
         splitView={true}
         compareMethod={DiffMethod.WORDS}
         renderContent={(source: string) => <pre>{source}</pre>}
-        onLineNumberClick={(lineId: string, event: React.MouseEvent<HTMLTableCellElement>) => {
+        onLineNumberClick={(lineId, event) => {
           // Determine side and line number
           const side = lineId.startsWith(LineNumberPrefix.LEFT) ? 'left' : 'right';
           const lineNumber = parseInt(lineId.substring(2), 10);

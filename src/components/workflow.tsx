@@ -3,6 +3,7 @@ import { RedlineDiff } from './redline';
 import { extractModifiedText } from '../utils/parse';
 import MDEditor from '@uiw/react-md-editor';
 import styled from '@emotion/styled';
+import { diffLines, Change } from 'diff';
 
 /**
  * Props for the Workflow component
@@ -263,24 +264,34 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
    */
   const handleLineNumberClick = useCallback(
     (lineId: string, content: string) => {
+      console.log(`Clicked LineId: ${lineId}, Content: "${content}"`);
+
       setSelectedLines((prevSelectedLines) => {
         const newSelectedLines = new Set(prevSelectedLines);
         if (newSelectedLines.has(lineId)) {
           newSelectedLines.delete(lineId);
-          setSelectedLineContents((prevContents) => {
-            const newContents = new Map(prevContents);
-            newContents.delete(lineId);
-            return newContents;
-          });
+          console.log(`Deselected LineId: ${lineId}`);
         } else {
           newSelectedLines.add(lineId);
-          setSelectedLineContents((prevContents) => {
-            const newContents = new Map(prevContents);
-            newContents.set(lineId, content);
-            return newContents;
-          });
+          console.log(`Selected LineId: ${lineId}`);
         }
+        // Log the currently selected lines
+        console.log('Updated Selected Lines:', Array.from(newSelectedLines));
         return newSelectedLines;
+      });
+
+      setSelectedLineContents((prevContents) => {
+        const newContents = new Map(prevContents);
+        if (newContents.has(lineId)) {
+          newContents.delete(lineId);
+          console.log(`Removed content for LineId: ${lineId}`);
+        } else {
+          newContents.set(lineId, content);
+          console.log(`Stored content for LineId: ${lineId}: "${content}"`);
+        }
+        // Log the currently selected line contents
+        console.log('Updated Selected Line Contents:', Array.from(newContents.entries()));
+        return newContents;
       });
     },
     []
@@ -352,43 +363,98 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
     setError(null);
     setWorkflowState('finalizing');
     try {
-      // Split the original and modified texts into arrays of lines
-      const originalLines: string[] = inputText.split('\n');
-      const modifiedLines: string[] = modifiedText.split('\n');
+      const originalTextNormalized = normalizeText(inputText).trimEnd();
+      const modifiedTextNormalized = normalizeText(modifiedText).trimEnd();
 
-      // Create a set of selected line numbers for quick lookup
-      const selectedLineNumbers: Set<number> = new Set(
-        Array.from(selectedLineContents.keys()).map((lineId: string) => {
-          // Extract line number from lineId (e.g., 'R-5' => 5)
-          const parts: string[] = lineId.split('-');
-          return parseInt(parts[1], 10) - 1; // Adjusting for zero-based index
-        })
-      );
+      const diff = diffLines(originalTextNormalized, modifiedTextNormalized);
 
-      // Construct the final lines array
+      let origLineNum = 1;
+      let modLineNum = 1;
+
       const finalLines: string[] = [];
 
-      for (let i = 0; i < originalLines.length; i++) {
-        if (selectedLineNumbers.has(i)) {
-          const modifiedLine: string = modifiedLines[i] || '';
-          if (modifiedLine.trim() !== '') {
-            // Replace original line with modified line
-            finalLines.push(modifiedLine);
+      let i = 0;
+
+      while (i < diff.length) {
+        const part = diff[i];
+        const lines = part.value.split('\n');
+        if (lines[lines.length - 1] === '') lines.pop();
+
+        if (part.removed && i + 1 < diff.length && diff[i + 1].added) {
+          // This is a modification (removed followed by added)
+          const removedLines = lines;
+          const addedPart = diff[i + 1];
+          const addedLines = addedPart.value.split('\n');
+          if (addedLines[addedLines.length - 1] === '') addedLines.pop();
+
+          for (let j = 0; j < Math.max(removedLines.length, addedLines.length); j++) {
+            const lineIdRemoved = `L-${origLineNum}`;
+            const lineIdAdded = `R-${modLineNum}`;
+
+            const originalLine = removedLines[j];
+            const modifiedLine = addedLines[j];
+
+            console.log(`Processing modification between ${lineIdRemoved} and ${lineIdAdded}`);
+
+            if (selectedLines.has(lineIdAdded)) {
+              if (modifiedLine !== undefined) {
+                finalLines.push(modifiedLine);
+              }
+            } else {
+              if (originalLine !== undefined) {
+                finalLines.push(originalLine);
+              }
+            }
+
+            if (originalLine !== undefined) origLineNum++;
+            if (modifiedLine !== undefined) modLineNum++;
           }
-          // If the modified line is empty, skip adding it (line is removed)
+
+          i += 2; // Skip the next part since we've processed it
+        } else if (part.added) {
+          // Added lines without corresponding removal
+          lines.forEach((line) => {
+            const lineId = `R-${modLineNum}`;
+            console.log(`Processing added line ${lineId}: "${line}"`);
+
+            if (selectedLines.has(lineId)) {
+              finalLines.push(line);
+            }
+            modLineNum++;
+          });
+          i++;
+        } else if (part.removed) {
+          // Removed lines without corresponding addition
+          lines.forEach((line) => {
+            const lineId = `L-${origLineNum}`;
+            console.log(`Processing removed line ${lineId}: "${line}"`);
+
+            // Unless the user wants to remove this line, we include it
+            finalLines.push(line);
+            origLineNum++;
+          });
+          i++;
         } else {
-          // Use the original line
-          finalLines.push(originalLines[i]);
+          // Unchanged lines
+          lines.forEach((line) => {
+            finalLines.push(line);
+            origLineNum++;
+            modLineNum++;
+          });
+          i++;
         }
       }
 
-      const finalEditedText: string = finalLines.join('\n');
+      console.log('Final Combined Lines:', finalLines);
+
+      const finalEditedText = finalLines.join('\n');
+
       console.log('Final Edited Text:', finalEditedText);
 
       setFinalText(finalEditedText);
       setWorkflowState('review');
     } catch (err) {
-      console.error(err);
+      console.error('Error in handleFinalize:', err);
       setError(
         err instanceof Error ? err.message : 'An error occurred while finalizing.'
       );
@@ -434,6 +500,8 @@ export const Workflow: FC<WorkflowProps> = ({ apiKey }) => {
     setWorkflowState('input');
     setError(null);
   };
+
+  const normalizeText = (text: string) => text.replace(/\r\n|\r/g, '\n');
 
   return (
     <Container>
